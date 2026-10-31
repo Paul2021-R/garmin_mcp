@@ -2459,3 +2459,54 @@ async def test_upsert_response_decode_commit_status_refers_to_food_log(
         assert data["custom_food_created"] is True
         assert "not logged" in data["hint"]
     mock_garmin_client.client.put.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_search_foods_uses_configured_locale(app_with_nutrition, mock_garmin_client, monkeypatch):
+    """GARMIN_FOOD_REGION/LANGUAGE are passed to food search when set."""
+    monkeypatch.setenv("GARMIN_FOOD_REGION", "KR")
+    monkeypatch.setenv("GARMIN_FOOD_LANGUAGE", "ko")
+    mock_garmin_client.connectapi.return_value = _SEARCH_RESPONSE
+    await app_with_nutrition.call_tool("search_foods", {"query": "방울토마토"})
+    mock_garmin_client.connectapi.assert_called_once_with(
+        "/nutrition-service/food/search",
+        params={
+            "searchExpression": "방울토마토",
+            "start": 0,
+            "limit": 20,
+            "regionCode": "KR",
+            "languageCode": "ko",
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_log_custom_food_uses_configured_locale(app_with_nutrition, mock_garmin_client, monkeypatch):
+    """Logged food items carry the configured region/language instead of US/en."""
+    monkeypatch.setenv("GARMIN_FOOD_REGION", "KR")
+    monkeypatch.setenv("GARMIN_FOOD_LANGUAGE", "ko")
+    mock_garmin_client.connectapi.return_value = MOCK_MEALS
+    mock_garmin_client.client.put.return_value = {"status": "ok"}
+    await app_with_nutrition.call_tool(
+        "log_custom_food",
+        {"meal_date": "2024-01-15", "meal_time": "12:30:00", "food_id": "abc123", "serving_id": "srv456"},
+    )
+    item = mock_garmin_client.client.put.call_args[1]["json"]["foodLogItems"][0]
+    assert item["regionCode"] == "KR"
+    assert item["languageCode"] == "ko"
+
+
+@pytest.mark.asyncio
+async def test_log_custom_food_defaults_to_us_locale(app_with_nutrition, mock_garmin_client, monkeypatch):
+    """Without configuration the US/en default is kept."""
+    monkeypatch.delenv("GARMIN_FOOD_REGION", raising=False)
+    monkeypatch.delenv("GARMIN_FOOD_LANGUAGE", raising=False)
+    mock_garmin_client.connectapi.return_value = MOCK_MEALS
+    mock_garmin_client.client.put.return_value = {"status": "ok"}
+    await app_with_nutrition.call_tool(
+        "log_custom_food",
+        {"meal_date": "2024-01-15", "meal_time": "12:30:00", "food_id": "abc123", "serving_id": "srv456"},
+    )
+    item = mock_garmin_client.client.put.call_args[1]["json"]["foodLogItems"][0]
+    assert item["regionCode"] == "US"
+    assert item["languageCode"] == "en"

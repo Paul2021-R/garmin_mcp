@@ -3,6 +3,7 @@ Nutrition/food logging functions for Garmin Connect MCP Server
 """
 import datetime
 import json
+import os
 import re
 from copy import deepcopy
 from typing import Optional
@@ -14,6 +15,30 @@ from garmin_mcp.write_errors import WriteTracker
 
 # The garmin_client will be set by the main file
 garmin_client = None
+
+
+def _food_locale() -> tuple[str, str]:
+    """Return the (regionCode, languageCode) used for food search, logs and custom foods.
+
+    Garmin's food catalog is regional: without a region, search misses most
+    non-US entries, and logged foods are tagged with the region they were
+    written under. ``GARMIN_FOOD_REGION`` / ``GARMIN_FOOD_LANGUAGE`` override
+    the US/en default (e.g. ``KR`` / ``ko``). Read at call time so a restart
+    is not needed between tests.
+    """
+    region = os.environ.get("GARMIN_FOOD_REGION", "").strip() or "US"
+    language = os.environ.get("GARMIN_FOOD_LANGUAGE", "").strip() or "en"
+    return region, language
+
+
+def _food_search_params(query: str, start: int, limit: int) -> dict:
+    """Build food-search params; add region/language only when configured."""
+    params = {"searchExpression": query, "start": start, "limit": limit}
+    if os.environ.get("GARMIN_FOOD_REGION", "").strip():
+        region, language = _food_locale()
+        params["regionCode"] = region
+        params["languageCode"] = language
+    return params
 
 
 def _num_to_str(value: float) -> str:
@@ -530,7 +555,7 @@ def register_tools(app):
         try:
             data = garmin_client.connectapi(
                 "/nutrition-service/food/search",
-                params={"searchExpression": query, "start": start, "limit": limit},
+                params=_food_search_params(query, start, limit),
             )
             if not data:
                 return "No foods found."
@@ -721,8 +746,8 @@ def register_tools(app):
                 "foodName": food_name,
                 "foodType": "GENERIC",
                 "source": "GARMIN",
-                "regionCode": "US",
-                "languageCode": "en",
+                "regionCode": _food_locale()[0],
+                "languageCode": _food_locale()[1],
             }
             if brand_name is not None:
                 food_meta["brandName"] = brand_name
@@ -887,8 +912,8 @@ def register_tools(app):
                 "foodName": food_name,
                 "foodType": "GENERIC",
                 "source": "GARMIN",
-                "regionCode": "US",
-                "languageCode": "en",
+                "regionCode": _food_locale()[0],
+                "languageCode": _food_locale()[1],
             }
             if effective_brand is not None:
                 food_meta["brandName"] = effective_brand
@@ -1028,8 +1053,8 @@ def register_tools(app):
                         "foodId": food_id,
                         "servingId": serving_id,
                         "source": source,
-                        "regionCode": "US",
-                        "languageCode": "en",
+                        "regionCode": _food_locale()[0],
+                        "languageCode": _food_locale()[1],
                         "servingQty": serving_qty,
                     }
                 ],
@@ -1256,8 +1281,8 @@ def register_tools(app):
                     "foodName": food_name,
                     "foodType": "GENERIC",
                     "source": "GARMIN",
-                    "regionCode": "US",
-                    "languageCode": "en",
+                    "regionCode": _food_locale()[0],
+                    "languageCode": _food_locale()[1],
                 }
                 if brand_name is not None:
                     food_meta["brandName"] = brand_name
@@ -1336,8 +1361,8 @@ def register_tools(app):
                         "foodId": food_id,
                         "servingId": serving_id,
                         "source": "GARMIN",
-                        "regionCode": "US",
-                        "languageCode": "en",
+                        "regionCode": _food_locale()[0],
+                        "languageCode": _food_locale()[1],
                         "servingQty": serving_qty,
                     }
                 ],
